@@ -146,7 +146,7 @@ This project expects a `secrets/` directory **next to** `srcs/`:
 └── srcs
     └── docker-compose.yml
 
-
+```
 
 Each file should contain the secret value (one line).
 
