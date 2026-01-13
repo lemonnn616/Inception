@@ -1,0 +1,202 @@
+services:
+  mariadb:
+    build:
+      context: ./requirements/mariadb
+      dockerfile: Dockerfile
+    image: mariadb:1.0
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+    secrets:
+      - db_root_password
+      - db_password
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - inception
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$$(tr -d '\\n' </run/secrets/db_root_password) --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  wordpress:
+    build:
+      context: ./requirements/wordpress
+      dockerfile: Dockerfile
+    image: wordpress:1.0
+    env_file: .env
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      WP_URL: ${WP_URL}
+      WP_TITLE: ${WP_TITLE}
+      WP_ADMIN_USER: ${WP_ADMIN_USER}
+      WP_ADMIN_EMAIL: ${WP_ADMIN_EMAIL}
+      WP_SECOND_USER: ${WP_SECOND_USER}
+      WP_SECOND_EMAIL: ${WP_SECOND_EMAIL}
+      WP_REDIS_HOST: ${WP_REDIS_HOST}
+      WP_REDIS_PORT: ${WP_REDIS_PORT}
+    secrets:
+      - db_password
+      - wp_admin_password
+      - redis_password
+    volumes:
+      - wp-data:/var/www/html
+    networks:
+      - inception
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "cgi-fcgi -bind -connect 127.0.0.1:9000 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 130s
+
+  nginx:
+    build:
+      context: ./requirements/nginx
+      dockerfile: Dockerfile
+    image: nginx:1.0
+    env_file: .env
+    ports:
+      - "443:443"
+    volumes:
+      - wp-data:/var/www/html:ro
+      - ./requirements/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    networks:
+      - inception
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fskI https://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    build:
+      context: ./requirements/bonus/redis
+      dockerfile: Dockerfile
+    image: redis:1.0
+    networks:
+      - inception
+    secrets:
+      - redis_password
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "PW=$$(tr -d '\\n' </run/secrets/redis_password); redis-cli -a \"$$PW\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  adminer:
+    build:
+      context: ./requirements/bonus/adminer
+      dockerfile: Dockerfile
+    image: adminer:1.0
+    networks: [inception]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "cgi-fcgi -bind -connect 127.0.0.1:9000 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  static:
+    build:
+      context: ./requirements/bonus/static
+      dockerfile: Dockerfile
+    image: static:1.0
+    networks: [inception]
+    restart: always
+
+  ftp:
+    build:
+      context: ./requirements/bonus/ftp
+      dockerfile: Dockerfile
+    image: ftp:1.0
+    networks: [inception]
+    secrets:
+      - ftp_password
+    volumes:
+      - wp-data:/var/www/html
+    ports:
+      - "21:21"
+      - "21200-21210:21200-21210"
+    restart: always
+
+  backup:
+    build:
+      context: ./requirements/bonus/backup
+      dockerfile: Dockerfile
+    image: backup:1.0
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      BACKUP_CRON: "15 3 * * *"
+      RETENTION_DAYS: 7
+      TZ: "Europe/Amsterdam"
+    secrets:
+      - db_password
+    volumes:
+      - wp-data:/var/www/html:ro
+      - backup-data:/backup
+    networks:
+      - inception
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: always
+
+
+networks:
+  inception:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/iriadyns/data/db
+  wp-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/iriadyns/data/wp
+  backup-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/iriadyns/data/backup
+
+secrets:
+  db_root_password:
+    file: ../secrets/db_root_password.txt
+  db_password:
+    file: ../secrets/db_password.txt
+  wp_admin_password:
+    file: ../secrets/wp_admin_password.txt
+  redis_password:
+    file: ../secrets/redis_password.txt
+  ftp_password:
+    file: ../secrets/ftp_password.txt
