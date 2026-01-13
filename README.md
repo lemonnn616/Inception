@@ -129,20 +129,23 @@ A dedicated backup container that:
 
 ---
 
-## 🔐 Secrets & certificates
+## 🔐 Secrets & Certificates
 
-### Secrets
+### 🗝️ Secrets
+
 This project expects a `secrets/` directory **next to** `srcs/`:
 
+```text
 .
 ├── secrets
-│ ├── db_root_password.txt
-│ ├── db_password.txt
-│ ├── wp_admin_password.txt
-│ ├── redis_password.txt
-│ └── ftp_password.txt
+│   ├── db_root_password.txt
+│   ├── db_password.txt
+│   ├── wp_admin_password.txt
+│   ├── redis_password.txt
+│   └── ftp_password.txt
 └── srcs
-└── docker-compose.yml
+    └── docker-compose.yml
+
 
 
 Each file should contain the secret value (one line).
